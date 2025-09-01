@@ -1,0 +1,213 @@
+---
+title: "MPDW1_Jessica"
+author: "Raden Roro Jessica Faaris"
+date: "2025-09-01"
+output: html_document
+---
+
+# Library
+```{r}
+library("forecast")
+library("graphics")
+library("TTR")
+library("TSA")
+```
+
+# Import Data
+```{r}
+library(rio)
+data <- import("https://raw.githubusercontent.com/gryoirsyad/mpdw/refs/heads/main/ice_cream.csv")
+subset_data <- data[461:575, ]
+head(subset_data)
+```
+# Explorasi Data
+```{r}
+View(subset_data)
+str(subset_data)
+```
+```{r}
+dim(subset_data)
+```
+Data memiliki 115 baris dan 2 variabel, variabel "DATE" dikategorikan sebagai IDate, dan "IPN31152N" bertipe numerik. 
+
+```{r}
+data.ts <- ts(subset_data$IPN31152N)
+head(data.ts)
+```
+Mengubah vektor numerik menjadi objek time series, dimulai dari bulan Mei 2010 hingga November 2019.
+
+```{r}
+summary(data.ts)
+```
+Data time series periode 2010–2019 (baris 461–575) memiliki nilai antara 67.80 dan 143.95, dengan rata-rata sekitar 103.61. Distribusi datanya condong ke atas (karena median 107.32 > mean 103.61), dan terdapat variasi cukup besar antar periode.
+
+```{r}
+ts.plot(data.ts, xlab="DATE ", ylab="IPN31152N", 
+        main = "Time Series Plot")
+points(data.ts)
+```
+Grafik menunjukkan data penjualan es krim bulanan dari 2010–2019 dengan pola musiman, karena setiap tahun penjualan naik-turun berulang, di puncak saat pertengahan tahun dan turun saat akhir tahun.
+
+```{r}
+# hitung jumlah data
+n <- nrow(subset_data)
+
+# tentukan batas 80%
+n_train <- floor(0.8 * n)
+
+# bagi data
+training_ma <- subset_data[1:n_train, ]
+testing_ma  <- subset_data[(n_train+1):n, ]
+
+# ubah ke time series
+train_ma.ts <- ts(training_ma$IPN31152N, start = 1, frequency = 12)
+test_ma.ts  <- ts(testing_ma$IPN31152N, start = n_train+1, frequency = 12)
+```
+
+Syntax ini membagi dataset menjadi dua bagian (training & testing), lalu mengubah keduanya menjadi time series bulanan. Training dipakai untuk membangun model, testing dipakai untuk mengevaluasi kinerja model.
+
+```{r}
+#eksplorasi keseluruhan data
+plot(data.ts, col="red",main="Plot semua data")
+points(data.ts)
+```
+```{r}
+#eksplorasi data latih
+plot(train_ma.ts, col="blue",main="Plot data latih")
+points(train_ma.ts)
+```
+```{r}
+#eksplorasi data uji
+plot(test_ma.ts, col="blue",main="Plot data uji")
+points(test_ma.ts)
+```
+Grafik menampilkan data uji yang jumlah periodenya lebih sedikit dibanding data latih.
+Terlihat pola naik-turun musiman tetap ada.
+
+```{r}
+library(ggplot2)
+ggplot() + 
+  geom_line(data = training_ma, aes(x = DATE, y = IPN31152N, col = "Data Latih")) +
+  geom_line(data = testing_ma, aes(x = DATE, y = IPN31152N, col = "Data Uji")) +
+  labs(x = "Periode Waktu", y = "Sales", color = "Legend") +
+   scale_colour_manual(name="Keterangan:", breaks = c("Data Latih", "Data Uji"),
+                      values = c("blue", "red")) + 
+  theme_bw() + theme(legend.position = "bottom",
+                     plot.caption = element_text(hjust=0.5, size=12))
+```
+
+```{r}
+#Pemulusan dengan winter aditif 
+winter <- HoltWinters(train_ma.ts,alpha=0.2,beta=0.1,gamma=0.1,seasonal = "additive")
+winter$fitted
+```
+
+```{r}
+xhat <- winter$fitted[,2]
+
+winter.opt<- HoltWinters(train_ma.ts, alpha= NULL,  beta = NULL, gamma = NULL, seasonal = "additive")
+winter.opt
+```
+```{r}
+winter.opt$fitted
+
+```
+
+```{r}
+xhat.opt <- winter.opt$fitted[,2]
+```
+
+```{r}
+#Forecast
+forecast <- predict(winter, n.ahead = 23)
+forecast.opt <- predict(winter.opt, n.ahead = 23)
+```
+
+```{r}
+#Plot time series
+plot(train_ma.ts,main="Winter 0.2;0.1;0.1",type="l",col="black",
+     xlim=c(1,25),pch=12)
+lines(xhat,type="l",col="red")
+lines(xhat.opt,type="l",col="blue")
+lines(forecast,type="l",col="red")
+lines(forecast.opt,type="l",col="blue")
+legend("topleft",c("Actual Data",expression(paste(winter)),
+                   expression(paste(winter.opt))),cex=0.5,
+       col=c("black","red","blue"),lty=1)
+```
+```{r}
+#Akurasi data training
+SSE<-winter$SSE
+MSE<-winter$SSE/length(train_ma.ts)
+RMSE<-sqrt(MSE)
+akurasi <- matrix(c(SSE,MSE,RMSE))
+row.names(akurasi)<- c("SSE", "MSE", "RMSE")
+colnames(akurasi) <- c("Akurasi")
+akurasi
+```
+```{r}
+SSE.opt<-winter.opt$SSE
+MSE.opt<-winter.opt$SSE/length(train_ma.ts)
+RMSE.opt<-sqrt(MSE.opt)
+akurasi.opt <- matrix(c(SSE.opt,MSE.opt,RMSE.opt))
+row.names(akurasi.opt)<- c("SSE.opt", "MSE.opt", "RMSE.opt")
+colnames(akurasi.opt) <- c("Akurasi")
+akurasi.opt
+```
+```{r}
+akurasi.train = data.frame(Model_Winter = c("Winter ","Winter optimal"),
+                            Nilai_SSE=c(SSE,SSE.opt),
+                            Nilai_MSE=c(MSE,MSE.opt),Nilai_RMSE=c(RMSE,RMSE.opt))
+akurasi.train
+```
+```{r}
+# hasil forecast (ambil nilai mean)
+forecast <- forecast(winter, h = length(test_ma.ts))
+forecast.opt <- forecast(winter.opt, h = length(test_ma.ts))
+
+# ambil prediksi sebagai vector
+prediksi <- as.numeric(forecast$mean)
+prediksi.opt <- as.numeric(forecast.opt$mean)
+
+# pastikan panjang sama dengan data testing
+length(prediksi)
+```
+```{r}
+length(test_ma.ts)
+length(prediksi.opt)
+length(test_ma.ts)
+```
+
+```{r}
+# hitung selisih
+selisih <- test_ma.ts - prediksi
+selisih.opt <- test_ma.ts - prediksi.opt
+
+# SSE & MSE
+SSEtesting <- sum(selisih^2)
+MSEtesting <- SSEtesting / length(test_ma.ts)
+RMSEtesting<-sqrt(MSEtesting)
+
+SSEtesting.opt <- sum(selisih.opt^2)
+MSEtesting.opt <- SSEtesting.opt / length(test_ma.ts)
+RMSEtesting.opt<-sqrt(MSEtesting.opt)
+
+SSEtesting
+```
+```{r}
+MSEtesting
+RMSEtesting
+SSEtesting.opt
+MSEtesting.opt
+RMSEtesting.opt
+```
+```{r}
+akurasi_testing <- data.frame(
+  Model = c("Model", "Model Optimum"),
+  SSE   = c(SSEtesting, SSEtesting.opt),
+  MSE   = c(MSEtesting, MSEtesting.opt),
+  Nilai_RMSE=c(RMSEtesting,RMSEtesting.opt)
+)
+akurasi_testing
+```
+
