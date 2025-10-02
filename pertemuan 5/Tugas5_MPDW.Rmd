@@ -1,0 +1,281 @@
+---
+title: "Tugas5_MPDW"
+author: "Raden Roro Jessica Faaris"
+date: "2025-10-01"
+output: html_document
+---
+
+
+```{r}
+library(ggplot2)
+library(tsibble)
+library(tseries)
+library(MASS)
+```
+
+# Input Data
+```{r}
+data <- read.csv("https://raw.githubusercontent.com/bluejeasy/mpdw/refs/heads/main/ice_cream.csv")
+data$DATE <- as.Date(data$DATE)
+subset_data <- data[461:575, ]
+head(subset_data)
+
+```
+
+# Stasioner dalam Rataan dan Ragam
+
+## Plot Time Series
+```{r}
+plot_subset <- subset_data |> 
+  as_tsibble(index = DATE) |> 
+  ggplot(aes(x = DATE, y = IPN31152N)) + 
+  geom_line() + 
+  theme_bw() +
+  xlab("Tanggal") + 
+  ylab("Nilai")
+
+plot_subset
+
+mean(subset_data$IPN31152N)
+```
+
+```{r}
+library(lattice)
+
+densityplot(as.vector(subset_data$IPN31152N),
+            main = "Density Plot Nilai IPN31152N (2010–2020)",
+            xlab = "Nilai IPN31152N")
+
+```
+
+Hasil visualisasi deret waktu menunjukkan bahwa data bersifat stasioner dalam rataan, ditunjukkan oleh fluktuasi yang konsisten di sekitar nilai tengahnya (±18). Selain itu, data juga stasioner dalam ragam karena variasi yang ditampilkan relatif konstan sepanjang periode pengamatan.
+
+## Plot ACF
+```{r}
+# ACF untuk subset data
+acf(subset_data$IPN31152N,
+    main = "Autocorrelation Function (ACF) IPN31152N (2010–2020)")
+
+```
+
+Berdasarkan plot ACF, terlihat bahwa nilai autokorelasi menunjukkan pola yang cenderung tails off secara bertahap dan membentuk gelombang sinusoidal, yang mengindikasikan adanya komponen musiman dalam data deret waktu.
+
+## Uji ADF
+```{r}
+library(tseries)
+
+# ADF Test untuk subset data
+adf.test(subset_data$IPN31152N)
+
+```
+$H_0$: Data tidak stasioner dalam rataan
+
+$H_1$: Data stasioner dalam rataan
+
+Berdasarkan uji ADF diperoleh statistik uji sebesar -8.3684 dengan p-value = 0.01 yang lebih kecil dari taraf nyata 5%. Dengan demikian, $H_0$ ditolak dan dapat disimpulkan bahwa data stasioner dalam rataan. Hasil ini konsisten dengan eksplorasi awal menggunakan plot deret waktu serta plot ACF yang menunjukkan kestasioneran data.
+
+## Plot Box-Cox
+```{r}
+library(MASS)
+
+# Index untuk subset data (115 data: 461–575)
+index <- seq(1:nrow(subset_data))
+
+# Buat model regresi sederhana (value ~ index)
+model <- lm(subset_data$IPN31152N ~ index)
+
+# Box-Cox dengan rentang lambda -1 sampai 4
+bc <- boxcox(
+  model,
+  lambda = seq(-1, 4, by = 0.01),
+  main = "Box-Cox Transformation untuk IPN31152N"
+)
+
+# Nilai lambda optimum
+lambda <- bc$x[which.max(bc$y)]
+lambda
+
+# Selang kepercayaan 95% untuk lambda
+ci_lambda <- bc$x[bc$y > max(bc$y) - 0.5 * qchisq(0.95, 1)]
+
+# Batas bawah dan batas atas
+ci_lower <- min(ci_lambda)
+ci_upper <- max(ci_lambda)
+
+c(Batas_Bawah = ci_lower, Batas_Atas = ci_upper)
+
+```
+Gambar di atas menunjukkan nilai λ optimum sebesar 1,6 dengan selang kepercayaan 95% pada rentang (0,52 ; 2,69). Selang kepercayaan tersebut memuat nilai 1 sehingga dapat disimpulkan bahwa data stasioner dalam ragam.
+
+
+## Partisi Data Deret Waktu
+```{r}
+library(ggplot2)
+library(tsibble)
+
+plot_subset <- subset_data |> 
+  as_tsibble(index = DATE) |> 
+  ggplot(aes(x = DATE, y = IPN31152N)) +
+  geom_line() +
+  theme_bw() +
+  xlab("Tanggal") + 
+  ylab("Nilai") +
+  
+  # Tambahkan garis batas (contoh pakai tanggal)
+  geom_vline(xintercept = as.Date("2015-04-01"), 
+             linetype = "dashed", color = "red") +
+  geom_vline(xintercept = as.Date("2017-12-01"), 
+             linetype = "dashed", color = "blue") +
+  ggtitle("Partisi Deret Waktu: 2010–2020")
+
+plot_subset
+
+```
+# Bagian 1: Observasi 1-60
+```{r}
+# Bagian 1: observasi 1–60 dari subset_data
+dt_stas1 <- ts(subset_data[1:60, "IPN31152N"])
+
+# Rata-rata Bagian 1
+mean(dt_stas1)
+
+# Varians Bagian 1
+var(dt_stas1)
+
+
+```
+## Plot Time Series
+```{r}
+# Bagian 1: observasi 1–60
+dt_stas1 <- ts(subset_data[1:60, "IPN31152N"])
+
+# Plot Bagian 1
+dt_stas1 |> 
+  as_tsibble() |> 
+  ggplot(aes(x = index, y = value)) +
+  geom_line() +
+  theme_bw() +
+  xlab("Obs") +
+  ylab("Nilai")
+```
+Plot deret waktu menunjukkan bahwa data tampak stasioner dalam rataan, ditandai dengan nilai tengah yang relatif stabil di sekitar 103,03, dan stasioner dalam ragam, ditandai dengan fluktuasi data yang tetap berada dalam rentang yang relatif konstan sekitar 103,03 hingga 320,10 sepanjang periode pengamatan.
+
+## Plot ACF
+```{r}
+acf(dt_stas1)
+```
+
+Pola penurunan tidak langsung cut off, melainkan tails off secara bertahap dan tampak membentuk gelombang yang menyerupai sinus.
+
+## Uji ADF
+```{r}
+tseries::adf.test(dt_stas1)
+```
+$H_0$: Data tidak stasioner dalam rataan
+
+$H_1$: Data stasioner dalam rataan
+
+Berdasarkan uji ADF tersebut, diperoleh p-value sebesar 0.01 yang lebih kecil dari taraf nyata 5%, sehingga tolak $H_0$ dan menandakan bahwa data stasioner dalam rataan. Hasil ini konsisten dengan eksplorasi awal melalui plot deret waktu maupun plot ACF.
+
+## Plot Box-Cox
+```{r}
+# Membuat index untuk data
+index <- seq(1, length(dt_stas1))
+
+# Box-Cox Transformation
+bc <- boxcox(
+  dt_stas1 ~ index,
+  lambda = seq(-2, 6, by = 0.01)
+)
+
+# Nilai lambda optimum (dibulatkan)
+lambda <- bc$x[which.max(bc$y)]
+lambda
+
+# Selang kepercayaan 95% untuk lambda
+ci_lambda <- bc$x[bc$y > max(bc$y) - 0.5 * qchisq(0.95, 1)]
+
+# Batas bawah dan batas atas
+ci_lower <- min(ci_lambda)
+ci_upper <- max(ci_lambda)
+
+c(Batas_Bawah = ci_lower, Batas_Atas = ci_upper)
+
+```
+Gambar di atas menunjukkan nilai rounded value (λ) optimum sebesar 1,5 dan pada selang kepercayaan 95% nilai memiliki batas bawah 0,14 dan batas atas 2,89. Selang tersebut memuat nilai satu sehingga dapat dikatakan bahwa data dt_stas1 stasioner dalam ragam.
+
+# Bagian 2: Observasi 1-100
+
+## Plot Time Series 
+```{r}
+# Bagian 2: observasi 1–100
+dt_stas2 <- ts(subset_data[1:100, "IPN31152N"])
+
+# Plot Bagian 2
+dt_stas2 |> 
+  as_tsibble() |> 
+  ggplot(aes(x = index, y = value)) +
+  geom_line() +
+  theme_bw() +
+  xlab("Obs") +
+  ylab("Nilai")
+```
+
+Plot deret waktu menunjukkan bahwa data tampak stasioner dalam rataan, ditandai dengan nilai tengah yang relatif stabil di sekitar 110, serta stasioner dalam ragam, ditandai dengan fluktuasi data yang cenderung berada pada rentang konstan sepanjang periode pengamatan. Selain itu, pola naik-turun yang berulang mengindikasikan adanya komponen musiman pada data.
+
+
+## Plot ACF
+```{r}
+acf(dt_stas2)
+
+```
+Pola autokorelasi tidak menunjukkan penurunan yang langsung cut off, melainkan tails off secara bertahap dan membentuk gelombang yang menyerupai sinus.
+
+## Uji ADF
+```{r}
+tseries::adf.test(dt_stas2)
+```
+$H_0$: Data tidak stasioner dalam rataan
+
+$H_1$: Data stasioner dalam rataan
+
+Berdasarkan uji ADF tersebut, diperoleh p-value sebesar 0.01 yang lebih kecil dari taraf nyata 5%, sehingga tolak $H_0$, menandakan bahwa data stasioner dalam rataan. Hasil ini konsisten dengan eksplorasi awal melalui plot deret waktu maupun plot ACF.
+
+
+## Plot Box-Cox
+```{r}
+# Membuat index untuk data
+index <- seq(1, length(dt_stas2))
+
+# Box-Cox Transformation
+bc <- boxcox(
+  dt_stas2 ~ index,
+  lambda = seq(-2, 6, by = 0.01)
+)
+
+# Nilai lambda optimum (dibulatkan)
+lambda <- bc$x[which.max(bc$y)]
+lambda
+
+# Selang kepercayaan 95% untuk lambda
+ci_lambda <- bc$x[bc$y > max(bc$y) - 0.5 * qchisq(0.95, 1)]
+
+# Batas bawah dan batas atas
+ci_lower <- min(ci_lambda)
+ci_upper <- max(ci_lambda)
+
+c(Batas_Bawah = ci_lower, Batas_Atas = ci_upper)
+```
+
+Gambar di atas menunjukkan nilai rounded value (λ) optimum sebesar 1,7 dan pada selang kepercayaan 95% nilai memiliki batas bawah 0,57 dan batas atas 2,86. Selang tersebut memuat nilai satu sehingga dapat dikatakan bahwa data dt_stas2 stasioner dalam ragam.
+
+
+
+
+
+
+
+
+
+
+
